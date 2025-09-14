@@ -28,11 +28,13 @@ const Interview = () => {
   
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [hasRecorded, setHasRecorded] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [micReady, setMicReady] = useState(false);
   const [gazeWarnings, setGazeWarnings] = useState(0);
   const [isLookingAway, setIsLookingAway] = useState(false);
   const [lookAwayStart, setLookAwayStart] = useState<number | null>(null);
+  const [answers, setAnswers] = useState<string[]>(new Array(INTERVIEW_QUESTIONS.length).fill(''));
 
   // Initialize camera and microphone
   useEffect(() => {
@@ -79,11 +81,11 @@ const Interview = () => {
     };
   }, [toast]);
 
-  // Simulate gaze tracking (in real app, this would use actual eye tracking)
+  // Simulate gaze tracking with faster detection (in real app, this would use actual eye tracking)
   useEffect(() => {
     const gazeTrackingInterval = setInterval(() => {
-      // Simulate random gaze detection
-      const isLooking = Math.random() > 0.1; // 90% chance of looking at screen
+      // Simulate random gaze detection with faster response
+      const isLooking = Math.random() > 0.15; // 85% chance of looking at screen
       
       if (!isLooking && !isLookingAway) {
         setIsLookingAway(true);
@@ -92,35 +94,40 @@ const Interview = () => {
         setIsLookingAway(false);
         setLookAwayStart(null);
       }
-    }, 2000);
+    }, 500); // Reduced from 2000ms to 500ms for faster detection
 
     return () => clearInterval(gazeTrackingInterval);
   }, [isLookingAway]);
 
-  // Handle prolonged looking away
+  // Handle prolonged looking away with faster warning
   useEffect(() => {
     if (lookAwayStart) {
       const warningTimeout = setTimeout(() => {
         if (isLookingAway) {
-          setGazeWarnings(prev => prev + 1);
+          setGazeWarnings(prev => {
+            const newCount = prev + 1;
+            console.log(`Gaze warning issued. Total warnings: ${newCount}`);
+            return newCount;
+          });
           toast({
             title: "Stay Focused",
-            description: "Please look at the camera during the interview.",
+            description: `Please look at the camera during the interview. Warning ${gazeWarnings + 1}`,
             variant: "destructive"
           });
           setIsLookingAway(false);
           setLookAwayStart(null);
         }
-      }, 3000); // 3 seconds
+      }, 1500); // Reduced from 3000ms to 1500ms for faster warning
 
       return () => clearTimeout(warningTimeout);
     }
-  }, [lookAwayStart, isLookingAway, toast]);
+  }, [lookAwayStart, isLookingAway, gazeWarnings, toast]);
 
   const startRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.start();
       setIsRecording(true);
+      setHasRecorded(false);
       toast({
         title: "Recording Started",
         description: "Please answer the question clearly.",
@@ -132,23 +139,57 @@ const Interview = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setHasRecorded(true);
+      toast({
+        title: "Answer Recorded",
+        description: "Click Submit to proceed to the next question.",
+      });
     }
   };
 
-  const nextQuestion = () => {
-    stopRecording();
-    
+  const submitAnswer = () => {
+    if (!hasRecorded) {
+      toast({
+        title: "No Answer Recorded",
+        description: "Please record your answer before submitting.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Store the answer (in real app, this would be the transcribed text)
+    const newAnswers = [...answers];
+    newAnswers[currentQuestion] = `Answer recorded for question ${currentQuestion + 1}`;
+    setAnswers(newAnswers);
+
+    // Move to next question
     if (currentQuestion < INTERVIEW_QUESTIONS.length - 1) {
       setCurrentQuestion(prev => prev + 1);
+      setHasRecorded(false);
       toast({
         title: "Next Question",
         description: `Moving to question ${currentQuestion + 2}`,
       });
     } else {
-      // Interview completed
-      const finalScore = Math.max(85 - (gazeWarnings * 5), 60);
+      // Interview completed - only calculate score if answers were provided
+      const answeredQuestions = newAnswers.filter(answer => answer.trim() !== '').length;
+      if (answeredQuestions === 0) {
+        toast({
+          title: "No Answers Recorded",
+          description: "Please answer at least one question to complete the interview.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      const baseScore = 85;
+      const gazeDeduction = gazeWarnings * 5;
+      const answerBonus = (answeredQuestions / INTERVIEW_QUESTIONS.length) * 15;
+      const finalScore = Math.max(baseScore - gazeDeduction + answerBonus, 60);
+      
       localStorage.setItem('interviewScore', finalScore.toString());
       localStorage.setItem('gazeWarnings', gazeWarnings.toString());
+      localStorage.setItem('answeredQuestions', answeredQuestions.toString());
       
       toast({
         title: "Interview Completed!",
@@ -158,6 +199,8 @@ const Interview = () => {
       navigate('/interview-complete');
     }
   };
+
+  // Remove the old nextQuestion function - replaced by submitAnswer
 
   const progress = ((currentQuestion + 1) / INTERVIEW_QUESTIONS.length) * 100;
 
@@ -265,11 +308,11 @@ const Interview = () => {
                   )}
                   
                   <Button 
-                    onClick={nextQuestion}
+                    onClick={submitAnswer}
                     className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={isRecording}
+                    disabled={isRecording || !hasRecorded}
                   >
-                    {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Next Question' : 'Complete Interview'}
+                    {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </div>

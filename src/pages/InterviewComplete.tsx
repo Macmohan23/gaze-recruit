@@ -4,18 +4,21 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle, Trophy, AlertTriangle, Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Progress } from "@/components/ui/progress";
+import { EvaluationResult } from "@/utils/evaluationService";
 
 const InterviewComplete = () => {
   const navigate = useNavigate();
   const [candidateData, setCandidateData] = useState<any>(null);
   const [score, setScore] = useState(0);
   const [warnings, setWarnings] = useState(0);
+  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
 
   useEffect(() => {
     // Get stored data
     const storedCandidate = localStorage.getItem('candidateData');
     const storedScore = localStorage.getItem('interviewScore');
     const storedWarnings = localStorage.getItem('gazeWarnings');
+    const storedEvaluation = localStorage.getItem('evaluationResult');
 
     if (storedCandidate) {
       setCandidateData(JSON.parse(storedCandidate));
@@ -25,6 +28,9 @@ const InterviewComplete = () => {
     }
     if (storedWarnings) {
       setWarnings(parseInt(storedWarnings));
+    }
+    if (storedEvaluation) {
+      setEvaluation(JSON.parse(storedEvaluation));
     }
   }, []);
 
@@ -108,7 +114,9 @@ const InterviewComplete = () => {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-primary">10</div>
+                  <div className="text-2xl font-bold text-primary">
+                    {localStorage.getItem('answeredQuestions') || '10'}
+                  </div>
                   <div className="text-muted-foreground">Questions Answered</div>
                 </div>
                 <div className="text-center">
@@ -126,20 +134,20 @@ const InterviewComplete = () => {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span>Communication Skills</span>
-                  <span className="font-medium text-accent">85%</span>
+                  <span className="font-medium text-accent">{evaluation?.communicationScore || 85}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Technical Knowledge</span>
-                  <span className="font-medium text-primary">78%</span>
+                  <span className="font-medium text-primary">{evaluation?.technicalScore || 78}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Confidence Level</span>
-                  <span className="font-medium text-accent">82%</span>
+                  <span className="font-medium text-accent">{evaluation?.confidenceScore || 82}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Focus & Attention</span>
-                  <span className={`font-medium ${warnings > 2 ? 'text-destructive' : 'text-accent'}`}>
-                    {warnings > 2 ? '65%' : '90%'}
+                  <span className={`font-medium ${(evaluation?.focusScore || 90) < 70 ? 'text-destructive' : 'text-accent'}`}>
+                    {evaluation?.focusScore || 90}%
                   </span>
                 </div>
               </div>
@@ -156,9 +164,24 @@ const InterviewComplete = () => {
               </Card>
             )}
 
+            {/* AI Feedback */}
+            {evaluation?.feedback && evaluation.feedback.length > 0 && (
+              <Card className="p-6 mb-6 text-left">
+                <h3 className="text-lg font-semibold mb-4">AI Feedback</h3>
+                <div className="space-y-2">
+                  {evaluation.feedback.map((feedback, index) => (
+                    <div key={index} className="flex items-start space-x-2">
+                      <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
+                      <p className="text-sm text-muted-foreground">{feedback}</p>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Your interview has been processed by our AI system. The hiring team will review
+                Your interview has been processed by our free AI system. The hiring team will review
                 your performance and contact you within 2-3 business days.
               </p>
               

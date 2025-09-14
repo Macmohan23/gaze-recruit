@@ -5,6 +5,9 @@ import { Progress } from "@/components/ui/progress";
 import { Camera, Mic, Eye, AlertTriangle, CheckCircle, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useFaceDetection } from "@/hooks/useFaceDetection";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { evaluateInterview } from "@/utils/evaluationService";
 
 // Sample interview questions
 const INTERVIEW_QUESTIONS = [
@@ -31,10 +34,20 @@ const Interview = () => {
   const [hasRecorded, setHasRecorded] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [micReady, setMicReady] = useState(false);
-  const [gazeWarnings, setGazeWarnings] = useState(0);
-  const [isLookingAway, setIsLookingAway] = useState(false);
-  const [lookAwayStart, setLookAwayStart] = useState<number | null>(null);
   const [answers, setAnswers] = useState<string[]>(new Array(INTERVIEW_QUESTIONS.length).fill(''));
+  
+  // Use face detection hook
+  const { isLookingAway, gazeWarnings, setGazeWarnings } = useFaceDetection(videoRef.current);
+  
+  // Use speech recognition hook
+  const { 
+    isListening, 
+    transcript, 
+    isSupported: speechSupported, 
+    startListening, 
+    stopListening, 
+    resetTranscript 
+  } = useSpeechRecognition();
 
   // Initialize camera and microphone
   useEffect(() => {
@@ -81,56 +94,32 @@ const Interview = () => {
     };
   }, [toast]);
 
-  // Simulate gaze tracking with faster detection (in real app, this would use actual eye tracking)
+  // Show gaze warnings from face detection
   useEffect(() => {
-    const gazeTrackingInterval = setInterval(() => {
-      // Simulate random gaze detection with faster response
-      const isLooking = Math.random() > 0.15; // 85% chance of looking at screen
-      
-      if (!isLooking && !isLookingAway) {
-        setIsLookingAway(true);
-        setLookAwayStart(Date.now());
-      } else if (isLooking && isLookingAway) {
-        setIsLookingAway(false);
-        setLookAwayStart(null);
-      }
-    }, 500); // Reduced from 2000ms to 500ms for faster detection
-
-    return () => clearInterval(gazeTrackingInterval);
-  }, [isLookingAway]);
-
-  // Handle prolonged looking away with faster warning
-  useEffect(() => {
-    if (lookAwayStart) {
-      const warningTimeout = setTimeout(() => {
-        if (isLookingAway) {
-          setGazeWarnings(prev => {
-            const newCount = prev + 1;
-            console.log(`Gaze warning issued. Total warnings: ${newCount}`);
-            return newCount;
-          });
-          toast({
-            title: "Stay Focused",
-            description: `Please look at the camera during the interview. Warning ${gazeWarnings + 1}`,
-            variant: "destructive"
-          });
-          setIsLookingAway(false);
-          setLookAwayStart(null);
-        }
-      }, 1500); // Reduced from 3000ms to 1500ms for faster warning
-
-      return () => clearTimeout(warningTimeout);
+    if (isLookingAway) {
+      toast({
+        title: "Stay Focused",
+        description: `Please look at the camera during the interview. Warning ${gazeWarnings + 1}`,
+        variant: "destructive"
+      });
     }
-  }, [lookAwayStart, isLookingAway, gazeWarnings, toast]);
+  }, [isLookingAway, gazeWarnings, toast]);
 
   const startRecording = () => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.start();
       setIsRecording(true);
       setHasRecorded(false);
+      
+      // Start speech recognition if supported
+      if (speechSupported) {
+        resetTranscript();
+        startListening();
+      }
+      
       toast({
         title: "Recording Started",
-        description: "Please answer the question clearly.",
+        description: speechSupported ? "Speak clearly - your answer is being transcribed." : "Please answer the question clearly.",
       });
     }
   };
@@ -140,6 +129,12 @@ const Interview = () => {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setHasRecorded(true);
+      
+      // Stop speech recognition
+      if (speechSupported && isListening) {
+        stopListening();
+      }
+      
       toast({
         title: "Answer Recorded",
         description: "Click Submit to proceed to the next question.",
@@ -157,9 +152,9 @@ const Interview = () => {
       return;
     }
 
-    // Store the answer (in real app, this would be the transcribed text)
+    // Store the transcribed answer or placeholder
     const newAnswers = [...answers];
-    newAnswers[currentQuestion] = `Answer recorded for question ${currentQuestion + 1}`;
+    newAnswers[currentQuestion] = transcript || `Recorded answer for question ${currentQuestion + 1}`;
     setAnswers(newAnswers);
 
     // Move to next question
@@ -182,14 +177,13 @@ const Interview = () => {
         return;
       }
       
-      const baseScore = 85;
-      const gazeDeduction = gazeWarnings * 5;
-      const answerBonus = (answeredQuestions / INTERVIEW_QUESTIONS.length) * 15;
-      const finalScore = Math.max(baseScore - gazeDeduction + answerBonus, 60);
+      // Use AI evaluation service
+      const evaluation = evaluateInterview(newAnswers, gazeWarnings, INTERVIEW_QUESTIONS.length);
       
-      localStorage.setItem('interviewScore', finalScore.toString());
+      localStorage.setItem('interviewScore', evaluation.overallScore.toString());
       localStorage.setItem('gazeWarnings', gazeWarnings.toString());
       localStorage.setItem('answeredQuestions', answeredQuestions.toString());
+      localStorage.setItem('evaluationResult', JSON.stringify(evaluation));
       
       toast({
         title: "Interview Completed!",
@@ -220,10 +214,16 @@ const Interview = () => {
                 <Mic className={`w-4 h-4 ${micReady ? 'text-accent' : 'text-destructive'}`} />
                 <span>Microphone</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <Eye className={`w-4 h-4 ${isLookingAway ? 'text-destructive' : 'text-accent'}`} />
-                <span>Gaze: {gazeWarnings} warnings</span>
-              </div>
+                <div className="flex items-center space-x-2">
+                  <Eye className={`w-4 h-4 ${isLookingAway ? 'text-destructive' : 'text-accent'}`} />
+                  <span>Gaze: {gazeWarnings} warnings</span>
+                </div>
+                {speechSupported && (
+                  <div className="flex items-center space-x-2 text-sm">
+                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-accent animate-pulse' : 'bg-muted'}`} />
+                    <span>Speech: {isListening ? 'Listening' : 'Ready'}</span>
+                  </div>
+                )}
             </div>
           </div>
         </div>
@@ -317,6 +317,14 @@ const Interview = () => {
                   </Button>
                 </div>
 
+                {/* Transcript Display */}
+                {speechSupported && transcript && (
+                  <Card className="p-4 bg-muted/50">
+                    <h4 className="font-semibold mb-2 text-sm">Live Transcript:</h4>
+                    <p className="text-sm text-muted-foreground italic">{transcript}</p>
+                  </Card>
+                )}
+
                 {/* Instructions */}
                 <Card className="p-4 bg-muted">
                   <h4 className="font-semibold mb-2 flex items-center">
@@ -327,7 +335,8 @@ const Interview = () => {
                     <li>• Look directly at the camera while answering</li>
                     <li>• Speak clearly and at a normal pace</li>
                     <li>• Take your time to think before answering</li>
-                    <li>• Click "Next Question" when you're finished</li>
+                    {speechSupported && <li>• Your speech is automatically transcribed</li>}
+                    {!speechSupported && <li>• Speech recognition not available in this browser</li>}
                   </ul>
                 </Card>
               </div>

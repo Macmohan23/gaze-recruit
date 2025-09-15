@@ -161,18 +161,6 @@ const Interview = () => {
   };
 
   const submitAnswer = () => {
-    const timeSpent = Date.now() - questionStartTime;
-    
-    // Check minimum time constraint (10 seconds)
-    if (timeSpent < 10000) {
-      toast({
-        title: "Please Take More Time",
-        description: `Spend at least 10 seconds on each question. Time remaining: ${Math.ceil((10000 - timeSpent) / 1000)}s`,
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (!hasRecorded) {
       toast({
         title: "No Answer Recorded",
@@ -314,13 +302,8 @@ const Interview = () => {
                 </div>
 
                 {/* Current Question */}
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Current Question:</h3>
-                    <div className="text-sm text-muted-foreground">
-                      Min. time: {Math.max(0, Math.ceil((10000 - (Date.now() - questionStartTime)) / 1000))}s
-                    </div>
-                  </div>
+                  <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Current Question:</h3>
                   <Card className="p-4 bg-gradient-secondary border-l-4 border-l-primary">
                     <p className="text-lg leading-relaxed">
                       {INTERVIEW_QUESTIONS[currentQuestion]}
@@ -352,7 +335,7 @@ const Interview = () => {
                   <Button 
                     onClick={submitAnswer}
                     className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={isRecording || !hasRecorded || (Date.now() - questionStartTime) < 10000 || transcript.trim().length < 10}
+                    disabled={isRecording || !hasRecorded || transcript.trim().length < 10}
                   >
                     {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -376,7 +359,6 @@ const Interview = () => {
                   <ul className="text-sm space-y-1 text-muted-foreground">
                     <li>• Look directly at the camera while answering</li>
                     <li>• Speak clearly and at a normal pace</li>
-                    <li>• Spend at least 10 seconds per question</li>
                     <li>• Provide detailed answers (minimum 10 characters)</li>
                     {speechSupported && <li>• Your speech is automatically transcribed</li>}
                     {!speechSupported && <li>• Speech recognition not available in this browser</li>}

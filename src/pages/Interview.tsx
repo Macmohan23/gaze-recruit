@@ -35,6 +35,9 @@ const Interview = () => {
   const [cameraReady, setCameraReady] = useState(false);
   const [micReady, setMicReady] = useState(false);
   const [answers, setAnswers] = useState<string[]>(new Array(INTERVIEW_QUESTIONS.length).fill(''));
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
   
   // Use face detection hook
   const { isLookingAway, gazeWarnings, setGazeWarnings } = useFaceDetection(videoRef.current);
@@ -65,8 +68,23 @@ const Interview = () => {
         setCameraReady(true);
         setMicReady(true);
 
-        // Initialize media recorder
-        mediaRecorderRef.current = new MediaRecorder(stream);
+        // Initialize media recorder with proper video recording
+        const chunks: Blob[] = [];
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9,opus'
+        });
+
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+            setRecordedChunks(prev => [...prev, event.data]);
+          }
+        };
+
+        mediaRecorderRef.current.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          setCurrentVideoBlob(blob);
+        };
         
         toast({
           title: "Media Access Granted",
@@ -143,6 +161,18 @@ const Interview = () => {
   };
 
   const submitAnswer = () => {
+    const timeSpent = Date.now() - questionStartTime;
+    
+    // Check minimum time constraint (10 seconds)
+    if (timeSpent < 10000) {
+      toast({
+        title: "Please Take More Time",
+        description: `Spend at least 10 seconds on each question. Time remaining: ${Math.ceil((10000 - timeSpent) / 1000)}s`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!hasRecorded) {
       toast({
         title: "No Answer Recorded",
@@ -152,37 +182,44 @@ const Interview = () => {
       return;
     }
 
-    // Store the transcribed answer or placeholder
+    // Validate answer content
+    const currentAnswer = transcript.trim();
+    if (currentAnswer.length < 10) {
+      toast({
+        title: "Answer Too Short",
+        description: "Please provide a more detailed answer (at least 10 characters).",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Store the transcribed answer
     const newAnswers = [...answers];
-    newAnswers[currentQuestion] = transcript || `Recorded answer for question ${currentQuestion + 1}`;
+    newAnswers[currentQuestion] = currentAnswer;
     setAnswers(newAnswers);
 
     // Move to next question
     if (currentQuestion < INTERVIEW_QUESTIONS.length - 1) {
       setCurrentQuestion(prev => prev + 1);
       setHasRecorded(false);
+      setQuestionStartTime(Date.now()); // Reset timer for next question
       toast({
         title: "Next Question",
         description: `Moving to question ${currentQuestion + 2}`,
       });
     } else {
-      // Interview completed - only calculate score if answers were provided
-      const answeredQuestions = newAnswers.filter(answer => answer.trim() !== '').length;
-      if (answeredQuestions === 0) {
-        toast({
-          title: "No Answers Recorded",
-          description: "Please answer at least one question to complete the interview.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Use AI evaluation service
+      // Interview completed - calculate final score
       const evaluation = evaluateInterview(newAnswers, gazeWarnings, INTERVIEW_QUESTIONS.length);
+      
+      // Store video recording if available
+      if (currentVideoBlob) {
+        const videoUrl = URL.createObjectURL(currentVideoBlob);
+        localStorage.setItem('interviewVideoUrl', videoUrl);
+      }
       
       localStorage.setItem('interviewScore', evaluation.overallScore.toString());
       localStorage.setItem('gazeWarnings', gazeWarnings.toString());
-      localStorage.setItem('answeredQuestions', answeredQuestions.toString());
+      localStorage.setItem('answeredQuestions', newAnswers.filter(a => a.trim().length > 10).length.toString());
       localStorage.setItem('evaluationResult', JSON.stringify(evaluation));
       
       toast({
@@ -278,7 +315,12 @@ const Interview = () => {
 
                 {/* Current Question */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Current Question:</h3>
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-semibold">Current Question:</h3>
+                    <div className="text-sm text-muted-foreground">
+                      Min. time: {Math.max(0, Math.ceil((10000 - (Date.now() - questionStartTime)) / 1000))}s
+                    </div>
+                  </div>
                   <Card className="p-4 bg-gradient-secondary border-l-4 border-l-primary">
                     <p className="text-lg leading-relaxed">
                       {INTERVIEW_QUESTIONS[currentQuestion]}
@@ -310,7 +352,7 @@ const Interview = () => {
                   <Button 
                     onClick={submitAnswer}
                     className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={isRecording || !hasRecorded}
+                    disabled={isRecording || !hasRecorded || (Date.now() - questionStartTime) < 10000 || transcript.trim().length < 10}
                   >
                     {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -334,7 +376,8 @@ const Interview = () => {
                   <ul className="text-sm space-y-1 text-muted-foreground">
                     <li>• Look directly at the camera while answering</li>
                     <li>• Speak clearly and at a normal pace</li>
-                    <li>• Take your time to think before answering</li>
+                    <li>• Spend at least 10 seconds per question</li>
+                    <li>• Provide detailed answers (minimum 10 characters)</li>
                     {speechSupported && <li>• Your speech is automatically transcribed</li>}
                     {!speechSupported && <li>• Speech recognition not available in this browser</li>}
                   </ul>

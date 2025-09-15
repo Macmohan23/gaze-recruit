@@ -2,68 +2,29 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Users, 
-  TrendingUp, 
-  Eye, 
-  AlertTriangle, 
-  Play,
-  Download,
-  LogOut,
-  BarChart3,
-  Calendar
-} from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Users, FileVideo, Eye, Calendar, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { AdminVideoPlayer } from "@/components/AdminVideoPlayer";
 
-// Sample candidate data
-const SAMPLE_CANDIDATES = [
-  {
-    id: 1,
-    name: "John Doe",
-    email: "john.doe@email.com", 
-    phone: "+1 (555) 123-4567",
-    score: 85,
-    gazeWarnings: 1,
-    completedAt: "2024-01-15 14:30",
-    status: "completed"
-  },
-  {
-    id: 2,
-    name: "Sarah Johnson",
-    email: "sarah.johnson@email.com",
-    phone: "+1 (555) 987-6543", 
-    score: 92,
-    gazeWarnings: 0,
-    completedAt: "2024-01-15 11:15",
-    status: "completed"
-  },
-  {
-    id: 3,
-    name: "Michael Chen",
-    email: "michael.chen@email.com",
-    phone: "+1 (555) 456-7890",
-    score: 78,
-    gazeWarnings: 3,
-    completedAt: "2024-01-14 16:45",
-    status: "completed"
-  },
-  {
-    id: 4,
-    name: "Emily Rodriguez",
-    email: "emily.rodriguez@email.com",
-    phone: "+1 (555) 321-0987",
-    score: 88,
-    gazeWarnings: 2,
-    completedAt: "2024-01-14 09:20",
-    status: "completed"
-  }
-];
+interface InterviewData {
+  id: string;
+  candidate_name: string;
+  position_applied: string;
+  score: number;
+  gaze_warnings: number;
+  completed_at: string;
+  video_recording_url: string;
+}
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [candidates, setCandidates] = useState(SAMPLE_CANDIDATES);
+  const [interviews, setInterviews] = useState<InterviewData[]>([]);
+  const [selectedInterview, setSelectedInterview] = useState<InterviewData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Check if admin is authenticated
@@ -73,32 +34,51 @@ const AdminDashboard = () => {
       return;
     }
 
-    // Load any stored candidate data from interview completion
-    const storedCandidate = localStorage.getItem('candidateData');
-    const storedScore = localStorage.getItem('interviewScore');
-    const storedWarnings = localStorage.getItem('gazeWarnings');
-
-    if (storedCandidate && storedScore && storedWarnings) {
-      const candidateData = JSON.parse(storedCandidate);
-      const newCandidate = {
-        id: Date.now(),
-        name: candidateData.name,
-        email: candidateData.email,
-        phone: candidateData.phone,
-        score: parseInt(storedScore),
-        gazeWarnings: parseInt(storedWarnings),
-        completedAt: new Date().toLocaleString(),
-        status: "completed"
-      };
-
-      setCandidates(prev => [newCandidate, ...prev]);
-      
-      // Clear stored data
-      localStorage.removeItem('candidateData');
-      localStorage.removeItem('interviewScore');  
-      localStorage.removeItem('gazeWarnings');
-    }
+    fetchInterviews();
   }, [navigate]);
+
+  const fetchInterviews = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('interviews')
+        .select(`
+          id,
+          score,
+          gaze_warnings,
+          completed_at,
+          video_recording_url,
+          profiles (
+            full_name,
+            position_applied
+          )
+        `)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedData = data?.map(interview => ({
+        id: interview.id,
+        candidate_name: interview.profiles?.full_name || 'Unknown',
+        position_applied: interview.profiles?.position_applied || 'Not specified',
+        score: interview.score || 0,
+        gaze_warnings: interview.gaze_warnings || 0,
+        completed_at: interview.completed_at,
+        video_recording_url: interview.video_recording_url || ''
+      })) || [];
+
+      setInterviews(formattedData);
+    } catch (error) {
+      console.error('Error fetching interviews:', error);
+      toast({
+        title: "Error Loading Data",
+        description: "Could not load interview data from database.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
@@ -109,28 +89,29 @@ const AdminDashboard = () => {
     navigate('/admin');
   };
 
-  const getScoreBadgeVariant = (score: number) => {
-    if (score >= 85) return "default";
-    if (score >= 70) return "secondary";
-    return "destructive";
-  };
-
   const getScoreColor = (score: number) => {
-    if (score >= 85) return "text-accent";
-    if (score >= 70) return "text-primary";
-    return "text-destructive";
+    if (score >= 80) return "bg-green-500";
+    if (score >= 60) return "bg-yellow-500";
+    return "bg-red-500";
   };
 
-  const averageScore = Math.round(candidates.reduce((acc, c) => acc + c.score, 0) / candidates.length);
-  const totalWarnings = candidates.reduce((acc, c) => acc + c.gazeWarnings, 0);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-secondary flex items-center justify-center">
+        <div className="animate-pulse text-lg">Loading interviews...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-secondary">
-      {/* Header */}
       <header className="border-b bg-card/80 backdrop-blur-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <div>
+              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Manage and review interview recordings</p>
+            </div>
             <Button 
               variant="outline" 
               onClick={handleLogout}
@@ -144,190 +125,125 @@ const AdminDashboard = () => {
       </header>
 
       <main className="py-8 px-6">
-        <div className="container mx-auto max-w-7xl space-y-8">
+        <div className="container mx-auto max-w-7xl">
           {/* Stats Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <Users className="w-6 h-6 text-primary" />
-                </div>
+          <div className="grid md:grid-cols-4 gap-4 mb-8">
+            <Card className="p-4">
+              <div className="flex items-center space-x-2">
+                <Users className="w-5 h-5 text-primary" />
                 <div>
-                  <p className="text-2xl font-bold">{candidates.length}</p>
-                  <p className="text-sm text-muted-foreground">Total Candidates</p>
+                  <p className="text-sm text-muted-foreground">Total Interviews</p>
+                  <p className="text-2xl font-bold">{interviews.length}</p>
                 </div>
               </div>
             </Card>
-
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6 text-accent" />
-                </div>
+            <Card className="p-4">
+              <div className="flex items-center space-x-2">
+                <FileVideo className="w-5 h-5 text-accent" />
                 <div>
-                  <p className={`text-2xl font-bold ${getScoreColor(averageScore)}`}>
-                    {averageScore}%
+                  <p className="text-sm text-muted-foreground">Recordings Available</p>
+                  <p className="text-2xl font-bold">{interviews.filter(i => i.video_recording_url).length}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-4">
+              <div className="flex items-center space-x-2">
+                <Eye className="w-5 h-5 text-destructive" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Avg. Gaze Warnings</p>
+                  <p className="text-2xl font-bold">
+                    {interviews.length > 0 ? Math.round(interviews.reduce((sum, i) => sum + i.gaze_warnings, 0) / interviews.length) : 0}
                   </p>
-                  <p className="text-sm text-muted-foreground">Average Score</p>
                 </div>
               </div>
             </Card>
-
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="w-6 h-6 text-destructive" />
-                </div>
+            <Card className="p-4">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-primary" />
                 <div>
-                  <p className="text-2xl font-bold text-destructive">{totalWarnings}</p>
-                  <p className="text-sm text-muted-foreground">Total Warnings</p>
-                </div>
-              </div>
-            </Card>
-
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-secondary/50 rounded-lg flex items-center justify-center">
-                  <Calendar className="w-6 h-6 text-foreground" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">Today</p>
-                  <p className="text-sm text-muted-foreground">Last Updated</p>
+                  <p className="text-sm text-muted-foreground">This Week</p>
+                  <p className="text-2xl font-bold">
+                    {interviews.filter(i => 
+                      new Date(i.completed_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+                    ).length}
+                  </p>
                 </div>
               </div>
             </Card>
           </div>
 
-          {/* Candidates Table */}
-          <Card className="shadow-medium">
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Interview Results</h2>
-                <Button variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  Export Data
-                </Button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b">
-                  <tr className="text-left">
-                    <th className="p-4 font-semibold">Candidate</th>
-                    <th className="p-4 font-semibold">Contact</th>
-                    <th className="p-4 font-semibold">Score</th>
-                    <th className="p-4 font-semibold">Warnings</th>
-                    <th className="p-4 font-semibold">Completed</th>
-                    <th className="p-4 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {candidates.map((candidate) => (
-                    <tr key={candidate.id} className="border-b hover:bg-muted/50 transition-colors">
-                      <td className="p-4">
-                        <div>
-                          <p className="font-medium">{candidate.name}</p>
-                          <p className="text-sm text-muted-foreground">ID: {candidate.id}</p>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <p className="text-sm">{candidate.email}</p>
-                          <p className="text-sm text-muted-foreground">{candidate.phone}</p>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <Badge variant={getScoreBadgeVariant(candidate.score)}>
-                          {candidate.score}%
-                        </Badge>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center space-x-2">
-                          {candidate.gazeWarnings > 0 && (
-                            <AlertTriangle className="w-4 h-4 text-destructive" />
+          <div className="grid lg:grid-cols-2 gap-8">
+            {/* Interviews Table */}
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold mb-4">Recent Interviews</h2>
+              <div className="overflow-auto max-h-96">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Candidate</TableHead>
+                      <TableHead>Position</TableHead>
+                      <TableHead>Score</TableHead>
+                      <TableHead>Warnings</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Video</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {interviews.map((interview) => (
+                      <TableRow key={interview.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell className="font-medium">{interview.candidate_name}</TableCell>
+                        <TableCell>{interview.position_applied}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className={`${getScoreColor(interview.score)} text-white`}>
+                            {interview.score}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={interview.gaze_warnings > 5 ? "destructive" : "secondary"}>
+                            {interview.gaze_warnings}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(interview.completed_at).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          {interview.video_recording_url ? (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setSelectedInterview(interview)}
+                            >
+                              <FileVideo className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">No recording</span>
                           )}
-                          <span className={candidate.gazeWarnings > 0 ? 'text-destructive font-medium' : ''}>
-                            {candidate.gazeWarnings}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground">
-                        {candidate.completedAt}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex space-x-2">
-                          <Button size="sm" variant="outline">
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                          <Button size="sm" variant="ghost">
-                            <Play className="w-4 h-4 mr-1" />
-                            Recording
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* AI Analysis Summary */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="p-6 shadow-soft">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <BarChart3 className="w-5 h-5 mr-2" />
-                Performance Analytics
-              </h3>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span>Excellent (85%+)</span>
-                  <span className="font-medium text-accent">
-                    {candidates.filter(c => c.score >= 85).length} candidates
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Good (70-84%)</span>
-                  <span className="font-medium text-primary">
-                    {candidates.filter(c => c.score >= 70 && c.score < 85).length} candidates
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Needs Improvement (60-69%)</span>
-                  <span className="font-medium text-destructive">
-                    {candidates.filter(c => c.score >= 60 && c.score < 70).length} candidates
-                  </span>
-                </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </Card>
 
-            <Card className="p-6 shadow-soft">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Eye className="w-5 h-5 mr-2" />
-                Attention Metrics
-              </h3>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span>Perfect Focus (0 warnings)</span>
-                  <span className="font-medium text-accent">
-                    {candidates.filter(c => c.gazeWarnings === 0).length} candidates
-                  </span>
+            {/* Video Player */}
+            <Card className="p-6">
+              <h2 className="text-xl font-semibold mb-4">Interview Recording</h2>
+              {selectedInterview && selectedInterview.video_recording_url ? (
+                <AdminVideoPlayer
+                  videoPath={selectedInterview.video_recording_url}
+                  candidateName={selectedInterview.candidate_name}
+                  interviewDate={selectedInterview.completed_at}
+                  interviewId={selectedInterview.id}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-48 bg-muted rounded-lg">
+                  <div className="text-center">
+                    <FileVideo className="w-12 h-12 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      {selectedInterview ? "No recording available" : "Select an interview to view recording"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Minor Distractions (1-2)</span>
-                  <span className="font-medium text-primary">
-                    {candidates.filter(c => c.gazeWarnings >= 1 && c.gazeWarnings <= 2).length} candidates
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Attention Issues (3+)</span>
-                  <span className="font-medium text-destructive">
-                    {candidates.filter(c => c.gazeWarnings >= 3).length} candidates
-                  </span>
-                </div>
-              </div>
+              )}
             </Card>
           </div>
         </div>

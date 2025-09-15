@@ -13,9 +13,10 @@ export const evaluateInterview = (
   gazeWarnings: number,
   totalQuestions: number
 ): EvaluationResult => {
-  // Basic scoring algorithm
-  const answerCompleteness = answers.filter(a => a.trim().length > 20).length / totalQuestions;
-  const focusScore = Math.max(0, 100 - (gazeWarnings * 10));
+  // Filter out empty or too short answers
+  const validAnswers = answers.filter(a => a.trim().length > 10);
+  const answerCompleteness = validAnswers.length / totalQuestions;
+  const focusScore = Math.max(0, 100 - (gazeWarnings * 8));
   
   // Simple keyword analysis for technical content
   const technicalKeywords = [
@@ -32,7 +33,7 @@ export const evaluateInterview = (
   let communicationMentions = 0;
   let totalWordCount = 0;
 
-  answers.forEach(answer => {
+  validAnswers.forEach(answer => {
     const words = answer.toLowerCase().split(/\s+/);
     totalWordCount += words.length;
     
@@ -45,10 +46,21 @@ export const evaluateInterview = (
     });
   });
 
-  // Calculate scores
-  const communicationScore = Math.min(100, 60 + (communicationMentions * 5) + (answerCompleteness * 20));
-  const technicalScore = Math.min(100, 50 + (technicalMentions * 8) + (answerCompleteness * 25));
-  const confidenceScore = Math.min(100, 70 + (totalWordCount / 50) + (answerCompleteness * 15));
+  // Calculate scores - only if there are valid answers
+  if (validAnswers.length === 0) {
+    return {
+      overallScore: 0,
+      communicationScore: 0,
+      technicalScore: 0,
+      confidenceScore: 0,
+      focusScore: Math.round(focusScore),
+      feedback: ["No valid answers provided. Please ensure you provide detailed responses."]
+    };
+  }
+
+  const communicationScore = Math.min(100, 40 + (communicationMentions * 6) + (answerCompleteness * 30));
+  const technicalScore = Math.min(100, 30 + (technicalMentions * 10) + (answerCompleteness * 35));
+  const confidenceScore = Math.min(100, 50 + (totalWordCount / 30) + (answerCompleteness * 25));
   
   const overallScore = Math.round(
     (communicationScore * 0.3 + technicalScore * 0.25 + confidenceScore * 0.25 + focusScore * 0.2)

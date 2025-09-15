@@ -347,6 +347,19 @@ const Interview = () => {
                   <Card className="p-4 bg-muted/50">
                     <h4 className="font-semibold mb-2 text-sm">Live Transcript:</h4>
                     <p className="text-sm text-muted-foreground italic">{transcript}</p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Characters: {transcript.length} (minimum 10 required)
+                    </p>
+                  </Card>
+                )}
+                
+                {/* Recording Status for Non-Speech Recognition */}
+                {!speechSupported && hasRecorded && (
+                  <Card className="p-4 bg-accent/10 border-accent/20">
+                    <div className="flex items-center space-x-2 text-accent">
+                      <CheckCircle className="w-4 h-4" />
+                      <span className="text-sm font-medium">Audio answer recorded successfully</span>
+                    </div>
                   </Card>
                 )}
 

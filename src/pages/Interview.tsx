@@ -161,21 +161,21 @@ const Interview = () => {
   };
 
   const submitAnswer = () => {
-    if (!hasRecorded) {
+    if (!hasRecorded && !transcript.trim()) {
       toast({
         title: "No Answer Recorded",
-        description: "Please record your answer before submitting.",
+        description: "Please record your answer or provide a transcript before submitting.",
         variant: "destructive"
       });
       return;
     }
 
     // Validate answer content
-    const currentAnswer = transcript.trim();
+    const currentAnswer = transcript.trim() || "Audio response recorded";
     if (currentAnswer.length < 10) {
       toast({
         title: "Answer Too Short",
-        description: "Please provide a more detailed answer (at least 10 characters).",
+        description: speechSupported ? "Please provide a more detailed answer (at least 10 characters)." : "Please record a longer answer.",
         variant: "destructive"
       });
       return;
@@ -335,7 +335,7 @@ const Interview = () => {
                   <Button 
                     onClick={submitAnswer}
                     className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={isRecording || !hasRecorded || transcript.trim().length < 10}
+                    disabled={isRecording || (!hasRecorded && !transcript.trim()) || (speechSupported && transcript.trim().length < 10)}
                   >
                     {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
                     <ArrowRight className="w-4 h-4 ml-2" />

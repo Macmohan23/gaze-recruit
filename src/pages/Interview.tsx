@@ -161,27 +161,36 @@ const Interview = () => {
   };
 
   const submitAnswer = () => {
-    if (!hasRecorded && !transcript.trim()) {
+    // Allow submission if either audio was recorded OR transcript is available
+    const hasValidTranscript = speechSupported && transcript.trim().length >= 10;
+    const hasValidAudio = !speechSupported && hasRecorded;
+    
+    if (!hasValidTranscript && !hasValidAudio && !hasRecorded) {
       toast({
         title: "No Answer Recorded",
-        description: "Please record your answer or provide a transcript before submitting.",
+        description: speechSupported ? 
+          "Please provide a detailed answer (minimum 10 characters) or record audio." :
+          "Please record your answer before submitting.",
         variant: "destructive"
       });
       return;
     }
 
-    // Validate answer content
-    const currentAnswer = transcript.trim() || "Audio response recorded";
-    if (currentAnswer.length < 10) {
+    // Validate transcript length only if speech recognition is supported and we have a transcript
+    if (speechSupported && transcript.trim() && transcript.trim().length < 10) {
       toast({
         title: "Answer Too Short",
-        description: speechSupported ? "Please provide a more detailed answer (at least 10 characters)." : "Please record a longer answer.",
+        description: "Please provide a more detailed answer (at least 10 characters).",
         variant: "destructive"
       });
       return;
     }
 
-    // Store the transcribed answer
+    // Store the answer - use transcript if available and valid, otherwise indicate audio was recorded
+    const currentAnswer = (speechSupported && transcript.trim().length >= 10) ? 
+      transcript.trim() : 
+      "Audio response recorded";
+      
     const newAnswers = [...answers];
     newAnswers[currentQuestion] = currentAnswer;
     setAnswers(newAnswers);
@@ -335,7 +344,13 @@ const Interview = () => {
                   <Button 
                     onClick={submitAnswer}
                     className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={isRecording || (!hasRecorded && !transcript.trim()) || (speechSupported && transcript.trim().length < 10)}
+                    disabled={
+                      isRecording || 
+                      (speechSupported ? 
+                        (!hasRecorded && transcript.trim().length < 10) : 
+                        !hasRecorded
+                      )
+                    }
                   >
                     {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -348,7 +363,7 @@ const Interview = () => {
                     <h4 className="font-semibold mb-2 text-sm">Live Transcript:</h4>
                     <p className="text-sm text-muted-foreground italic">{transcript}</p>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Characters: {transcript.length} (minimum 10 required)
+                      Characters: {transcript.length}/10 minimum {transcript.length >= 10 ? '✓' : ''}
                     </p>
                   </Card>
                 )}
@@ -359,6 +374,33 @@ const Interview = () => {
                     <div className="flex items-center space-x-2 text-accent">
                       <CheckCircle className="w-4 h-4" />
                       <span className="text-sm font-medium">Audio answer recorded successfully</span>
+                    </div>
+                  </Card>
+                )}
+                
+                {/* Status indicator for speech recognition browsers */}
+                {speechSupported && !isRecording && (
+                  <Card className="p-3 bg-muted/30">
+                    <div className="flex items-center justify-between text-sm">
+                      <span>Answer Status:</span>
+                      <div className="flex items-center space-x-2">
+                        {transcript.trim().length >= 10 ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-accent" />
+                            <span className="text-accent">Ready to submit</span>
+                          </>
+                        ) : hasRecorded ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-primary" />
+                            <span className="text-primary">Audio recorded</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-4 h-4 border-2 border-muted-foreground rounded-full" />
+                            <span className="text-muted-foreground">Not ready</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </Card>
                 )}

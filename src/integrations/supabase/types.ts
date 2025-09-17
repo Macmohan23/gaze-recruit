@@ -105,6 +105,7 @@ export type Database = {
           created_at: string
           gaze_warnings: number | null
           id: string
+          job_role: Database["public"]["Enums"]["job_role"] | null
           score: number | null
           started_at: string | null
           status: string
@@ -118,6 +119,7 @@ export type Database = {
           created_at?: string
           gaze_warnings?: number | null
           id?: string
+          job_role?: Database["public"]["Enums"]["job_role"] | null
           score?: number | null
           started_at?: string | null
           status?: string
@@ -131,6 +133,7 @@ export type Database = {
           created_at?: string
           gaze_warnings?: number | null
           id?: string
+          job_role?: Database["public"]["Enums"]["job_role"] | null
           score?: number | null
           started_at?: string | null
           status?: string
@@ -187,6 +190,7 @@ export type Database = {
           difficulty_level: string | null
           expected_duration: number | null
           id: string
+          job_role: Database["public"]["Enums"]["job_role"] | null
           question_order: number
           question_text: string
         }
@@ -196,6 +200,7 @@ export type Database = {
           difficulty_level?: string | null
           expected_duration?: number | null
           id?: string
+          job_role?: Database["public"]["Enums"]["job_role"] | null
           question_order: number
           question_text: string
         }
@@ -205,6 +210,7 @@ export type Database = {
           difficulty_level?: string | null
           expected_duration?: number | null
           id?: string
+          job_role?: Database["public"]["Enums"]["job_role"] | null
           question_order?: number
           question_text?: string
         }
@@ -218,7 +224,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      job_role:
+        | "software_developer"
+        | "data_analyst"
+        | "designer"
+        | "product_manager"
+        | "marketing_specialist"
+        | "sales_representative"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -345,6 +357,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      job_role: [
+        "software_developer",
+        "data_analyst",
+        "designer",
+        "product_manager",
+        "marketing_specialist",
+        "sales_representative",
+      ],
+    },
   },
 } as const

@@ -1,56 +1,135 @@
-import { useState, useEffect, useRef } from "react";
-import { Card } from "@/components/ui/card";
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Camera, Mic, Eye, AlertTriangle, CheckCircle, ArrowRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { Mic, MicOff, Eye, ArrowRight, CheckCircle, Clock, Camera, AlertTriangle } from "lucide-react";
 import { useFaceDetection } from "@/hooks/useFaceDetection";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import { evaluateInterview } from "@/utils/evaluationService";
+import { useVideoRecording } from "@/hooks/useVideoRecording";
+import { evaluateAnswer } from "@/utils/evaluationService";
+import { supabase } from "@/integrations/supabase/client";
 
-// Sample interview questions
-const INTERVIEW_QUESTIONS = [
-  "Tell me about yourself and your background.",
-  "Why should we hire you for this role?",
-  "What are your strengths and weaknesses?",
-  "Where do you see yourself in the next 5 years?",
-  "Explain the concept of Object-Oriented Programming (OOP).",
-  "What is the difference between supervised and unsupervised learning?",
-  "Explain REST APIs and how they work.",
-  "What are the differences between SQL and NoSQL databases?",
-  "Explain a challenging problem you solved recently and how you approached it.",
-  "How would you explain a complex technical concept to a non-technical person?"
-];
+interface Question {
+  id: string;
+  question_text: string;
+  question_order: number;
+  category: string;
+  difficulty_level: string;
+  expected_duration: number;
+}
 
 const Interview = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   
+  // Question state
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
+  const [answers, setAnswers] = useState<string[]>([]);
   const [hasRecorded, setHasRecorded] = useState(false);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
+  const [timeElapsed, setTimeElapsed] = useState(0);
   const [cameraReady, setCameraReady] = useState(false);
   const [micReady, setMicReady] = useState(false);
-  const [answers, setAnswers] = useState<string[]>(new Array(INTERVIEW_QUESTIONS.length).fill(''));
-  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
-  const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
-  
-  // Use face detection hook
-  const { isLookingAway, gazeWarnings, setGazeWarnings } = useFaceDetection(videoRef.current);
-  
-  // Use speech recognition hook
+
+  // Use hooks
+  const { isLookingAway, gazeWarnings } = useFaceDetection(videoRef.current);
   const { 
-    isListening, 
+    isListening: isRecording, 
     transcript, 
     isSupported: speechSupported, 
     startListening, 
     stopListening, 
-    resetTranscript 
+    resetTranscript: setTranscript 
   } = useSpeechRecognition();
+  const { recordedBlob, startRecording: startVideoRecording, stopRecording: stopVideoRecording } = useVideoRecording();
+
+  // Load job-role specific questions and check authentication
+  useEffect(() => {
+    const loadQuestions = async () => {
+      try {
+        // Check authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+          navigate('/auth');
+          return;
+        }
+
+        // Get job role from navigation state or profile
+        let jobRole = location.state?.jobRole;
+        
+        if (!jobRole) {
+          // Fetch from profile if not in state
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('position_applied')
+            .eq('user_id', session.user.id)
+            .single();
+          
+          jobRole = profile?.position_applied;
+        }
+
+        if (!jobRole) {
+          toast({
+            title: "No Job Role Selected",
+            description: "Please select a job role before starting the interview",
+            variant: "destructive"
+          });
+          navigate('/candidate/dashboard');
+          return;
+        }
+
+        // Load role-specific questions
+        const { data: questionsData, error } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('job_role', jobRole)
+          .order('question_order');
+
+        if (error) {
+          console.error('Error loading questions:', error);
+          toast({
+            title: "Error",
+            description: "Failed to load interview questions",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        if (!questionsData || questionsData.length === 0) {
+          toast({
+            title: "No Questions Available",
+            description: "No questions found for the selected role",
+            variant: "destructive"
+          });
+          navigate('/candidate/dashboard');
+          return;
+        }
+
+        setQuestions(questionsData);
+        setAnswers(new Array(questionsData.length).fill(""));
+        setQuestionStartTime(Date.now());
+      } catch (error) {
+        console.error('Error in loadQuestions:', error);
+        navigate('/auth');
+      }
+    };
+
+    loadQuestions();
+  }, [navigate, location.state, toast]);
+
+  // Timer for question duration
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeElapsed(Date.now() - questionStartTime);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [questionStartTime]);
 
   // Initialize camera and microphone
   useEffect(() => {
@@ -67,24 +146,6 @@ const Interview = () => {
 
         setCameraReady(true);
         setMicReady(true);
-
-        // Initialize media recorder with proper video recording
-        const chunks: Blob[] = [];
-        mediaRecorderRef.current = new MediaRecorder(stream, {
-          mimeType: 'video/webm;codecs=vp9,opus'
-        });
-
-        mediaRecorderRef.current.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            chunks.push(event.data);
-            setRecordedChunks(prev => [...prev, event.data]);
-          }
-        };
-
-        mediaRecorderRef.current.onstop = () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          setCurrentVideoBlob(blob);
-        };
         
         toast({
           title: "Media Access Granted",
@@ -124,43 +185,49 @@ const Interview = () => {
   }, [isLookingAway, gazeWarnings, toast]);
 
   const startRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      setHasRecorded(false);
-      
-      // Start speech recognition if supported
-      if (speechSupported) {
-        resetTranscript();
-        startListening();
-      }
-      
-      toast({
-        title: "Recording Started",
-        description: speechSupported ? "Speak clearly - your answer is being transcribed." : "Please answer the question clearly.",
-      });
+    setHasRecorded(false);
+    if (videoRef.current?.srcObject) {
+      startVideoRecording(videoRef.current.srcObject as MediaStream);
     }
+    
+    // Start speech recognition if supported
+    if (speechSupported) {
+      setTranscript("");
+      startListening();
+    }
+    
+    toast({
+      title: "Recording Started",
+      description: speechSupported ? "Speak clearly - your answer is being transcribed." : "Please answer the question clearly.",
+    });
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setHasRecorded(true);
-      
-      // Stop speech recognition
-      if (speechSupported && isListening) {
-        stopListening();
-      }
-      
-      toast({
-        title: "Answer Recorded",
-        description: "Click Submit to proceed to the next question.",
-      });
+    setHasRecorded(true);
+    stopVideoRecording();
+    
+    // Stop speech recognition
+    if (speechSupported) {
+      stopListening();
     }
+    
+    toast({
+      title: "Answer Recorded",
+      description: "Click Submit to proceed to the next question.",
+    });
   };
 
   const submitAnswer = () => {
+    // Check if minimum time has elapsed (10 seconds)
+    if (timeElapsed < 10000) {
+      toast({
+        title: "Please Take More Time",
+        description: `You need to spend at least 10 seconds on each question. ${Math.ceil((10000 - timeElapsed) / 1000)} seconds remaining.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     // Allow submission if either audio was recorded OR transcript is available
     const hasValidTranscript = speechSupported && transcript.trim().length >= 10;
     const hasValidAudio = !speechSupported && hasRecorded;
@@ -195,235 +262,321 @@ const Interview = () => {
     newAnswers[currentQuestion] = currentAnswer;
     setAnswers(newAnswers);
 
-    // Move to next question
-    if (currentQuestion < INTERVIEW_QUESTIONS.length - 1) {
-      setCurrentQuestion(prev => prev + 1);
-      setHasRecorded(false);
-      setQuestionStartTime(Date.now()); // Reset timer for next question
-      toast({
-        title: "Next Question",
-        description: `Moving to question ${currentQuestion + 2}`,
-      });
+    // Move to next question or complete interview
+    if (currentQuestion < questions.length - 1) {
+      setCurrentQuestion(currentQuestion + 1);
+      resetForNextQuestion();
     } else {
-      // Interview completed - calculate final score
-      const evaluation = evaluateInterview(newAnswers, gazeWarnings, INTERVIEW_QUESTIONS.length);
-      
-      // Store video recording if available
-      if (currentVideoBlob) {
-        const videoUrl = URL.createObjectURL(currentVideoBlob);
-        localStorage.setItem('interviewVideoUrl', videoUrl);
-      }
-      
-      localStorage.setItem('interviewScore', evaluation.overallScore.toString());
-      localStorage.setItem('gazeWarnings', gazeWarnings.toString());
-      localStorage.setItem('answeredQuestions', newAnswers.filter(a => a.trim().length > 10).length.toString());
-      localStorage.setItem('evaluationResult', JSON.stringify(evaluation));
-      
-      toast({
-        title: "Interview Completed!",
-        description: "Thank you for your participation.",
-      });
-      
-      navigate('/interview-complete');
+      completeInterview(newAnswers);
     }
   };
 
-  // Remove the old nextQuestion function - replaced by submitAnswer
+  const resetForNextQuestion = () => {
+    setHasRecorded(false);
+    setTranscript("");
+    setQuestionStartTime(Date.now());
+    setTimeElapsed(0);
+    stopRecording();
+  };
 
-  const progress = ((currentQuestion + 1) / INTERVIEW_QUESTIONS.length) * 100;
+  const completeInterview = async (finalAnswers: string[]) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        navigate('/auth');
+        return;
+      }
+
+      // Get user profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+
+      if (!profile) {
+        toast({
+          title: "Error",
+          description: "Profile not found",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Calculate total score from all answers
+      const scores = finalAnswers.map((answer, index) => 
+        evaluateAnswer(answer, questions[index]?.question_text || "")
+      );
+      const totalScore = Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+      
+      // Create interview record
+      const { data: interview, error: interviewError } = await supabase
+        .from('interviews')
+        .insert([{
+          candidate_id: profile.id,
+          score: totalScore,
+          gaze_warnings: gazeWarnings,
+          completion_time: Math.round((Date.now() - questionStartTime) / 1000),
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          status: 'completed',
+          job_role: profile.position_applied as any,
+          video_recording_url: recordedBlob ? URL.createObjectURL(recordedBlob) : null
+        }])
+        .select()
+        .single();
+
+      if (interviewError) {
+        console.error('Error creating interview:', interviewError);
+        toast({
+          title: "Error",
+          description: "Failed to save interview data",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Save answers
+      if (interview) {
+        const answerPromises = finalAnswers.map((answer, index) => {
+          if (!questions[index]) return Promise.resolve();
+          
+          return supabase
+            .from('answers')
+            .insert([{
+              interview_id: interview.id,
+              question_id: questions[index].id,
+              answer_text: answer,
+              ai_score: scores[index],
+              ai_feedback: "Answer evaluated successfully"
+            }]);
+        });
+
+        await Promise.all(answerPromises);
+      }
+      
+      stopVideoRecording();
+      
+      // Navigate to completion page
+      navigate('/interview-complete', { 
+        state: { 
+          score: totalScore,
+          answers: finalAnswers,
+          gazeWarnings: gazeWarnings
+        } 
+      });
+      
+    } catch (error) {
+      console.error('Error completing interview:', error);
+      toast({
+        title: "Error",
+        description: "There was an error saving your interview. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-background/95 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading interview questions...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-secondary">
-      {/* Header */}
-      <header className="border-b bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold">AI Interview Assessment</h1>
-            <div className="flex items-center space-x-4 text-sm">
-              <div className="flex items-center space-x-2">
-                <Camera className={`w-4 h-4 ${cameraReady ? 'text-accent' : 'text-destructive'}`} />
-                <span>Camera</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Mic className={`w-4 h-4 ${micReady ? 'text-accent' : 'text-destructive'}`} />
-                <span>Microphone</span>
-              </div>
-                <div className="flex items-center space-x-2">
-                  <Eye className={`w-4 h-4 ${isLookingAway ? 'text-destructive' : 'text-accent'}`} />
-                  <span>Gaze: {gazeWarnings} warnings</span>
-                </div>
-                {speechSupported && (
-                  <div className="flex items-center space-x-2 text-sm">
-                    <div className={`w-2 h-2 rounded-full ${isListening ? 'bg-accent animate-pulse' : 'bg-muted'}`} />
-                    <span>Speech: {isListening ? 'Listening' : 'Ready'}</span>
-                  </div>
-                )}
+    <div className="min-h-screen bg-gradient-to-br from-background to-background/95 p-4">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">AI Interview Assessment</h1>
+          <p className="text-muted-foreground">Answer the questions naturally and maintain eye contact with the camera</p>
+        </div>
+
+        {/* Progress */}
+        <div className="mb-8">
+          <div className="flex justify-between text-sm mb-2">
+            <span>Question Progress</span>
+            <span>{currentQuestion + 1} of {questions.length}</span>
+          </div>
+          <Progress value={((currentQuestion + 1) / questions.length) * 100} className="h-2" />
+        </div>
+
+        {/* Question Card */}
+        <Card className="mb-6 p-6 bg-card/50 backdrop-blur">
+          <div className="flex justify-between items-start mb-4">
+            <h2 className="text-xl font-semibold flex-1">
+              Question {currentQuestion + 1}: {questions[currentQuestion]?.question_text}
+            </h2>
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground ml-4">
+              <Clock className="w-4 h-4" />
+              <span>
+                {Math.floor(timeElapsed / 1000)}s
+                {timeElapsed >= 10000 ? ' ✓' : ` (${Math.ceil((10000 - timeElapsed) / 1000)}s required)`}
+              </span>
             </div>
           </div>
-        </div>
-      </header>
 
-      <main className="py-8 px-6">
-        <div className="container mx-auto max-w-6xl">
-          <div className="grid lg:grid-cols-2 gap-8">
+          {/* Media and Controls */}
+          <div className="grid lg:grid-cols-2 gap-6">
             {/* Video Feed */}
-            <Card className="p-6 shadow-medium">
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Video Monitor</h3>
-                <div className="relative bg-muted rounded-lg overflow-hidden aspect-video">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                  {isLookingAway && (
-                    <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
-                      <div className="bg-destructive text-destructive-foreground px-4 py-2 rounded-lg flex items-center space-x-2">
-                        <AlertTriangle className="w-5 h-5" />
-                        <span>Please look at the camera</span>
-                      </div>
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Video Monitor</h3>
+              <div className="relative bg-muted rounded-lg overflow-hidden aspect-video">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                {isLookingAway && (
+                  <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
+                    <div className="bg-destructive text-destructive-foreground px-4 py-2 rounded-lg flex items-center space-x-2">
+                      <AlertTriangle className="w-5 h-5" />
+                      <span>Please look at the camera</span>
+                    </div>
+                  </div>
+                )}
+                <div className="absolute bottom-4 left-4 flex items-center space-x-2">
+                  {isRecording && (
+                    <div className="flex items-center space-x-2 bg-destructive/90 text-destructive-foreground px-3 py-1 rounded-full">
+                      <div className="w-2 h-2 bg-destructive-foreground rounded-full animate-pulse" />
+                      <span className="text-sm">Recording</span>
                     </div>
                   )}
-                  <div className="absolute bottom-4 left-4 flex items-center space-x-2">
-                    {isRecording && (
-                      <div className="flex items-center space-x-2 bg-destructive/90 text-destructive-foreground px-3 py-1 rounded-full">
-                        <div className="w-2 h-2 bg-destructive-foreground rounded-full animate-pulse" />
-                        <span className="text-sm">Recording</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
-            </Card>
 
-            {/* Interview Panel */}
-            <Card className="p-6 shadow-medium">
-              <div className="space-y-6">
-                {/* Progress */}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Question {currentQuestion + 1} of {INTERVIEW_QUESTIONS.length}</span>
-                    <span>{Math.round(progress)}% Complete</span>
+              {/* Status Indicators */}
+              <div className="flex justify-between text-sm">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <Camera className={`w-4 h-4 ${cameraReady ? 'text-accent' : 'text-destructive'}`} />
+                    <span>Camera</span>
                   </div>
-                  <Progress value={progress} className="h-2" />
+                  <div className="flex items-center space-x-2">
+                    <Mic className={`w-4 h-4 ${micReady ? 'text-accent' : 'text-destructive'}`} />
+                    <span>Microphone</span>
+                  </div>
                 </div>
-
-                {/* Current Question */}
-                  <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Current Question:</h3>
-                  <Card className="p-4 bg-gradient-secondary border-l-4 border-l-primary">
-                    <p className="text-lg leading-relaxed">
-                      {INTERVIEW_QUESTIONS[currentQuestion]}
-                    </p>
-                  </Card>
+                <div className="flex items-center space-x-2">
+                  <Eye className={`w-4 h-4 ${isLookingAway ? 'text-destructive' : 'text-accent'}`} />
+                  <span>Warnings: {gazeWarnings}</span>
                 </div>
+              </div>
+            </div>
 
-                {/* Controls */}
-                <div className="flex space-x-4">
-                  {!isRecording ? (
-                    <Button 
-                      onClick={startRecording}
-                      className="flex-1 bg-accent hover:bg-accent/90"
-                      disabled={!cameraReady || !micReady}
-                    >
-                      <Mic className="w-4 h-4 mr-2" />
-                      Start Answer
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={stopRecording}
-                      variant="outline"
-                      className="flex-1"
-                    >
-                      Stop Recording
-                    </Button>
-                  )}
-                  
+            {/* Controls */}
+            <div className="space-y-6">
+              <div className="flex space-x-4">
+                {!isRecording ? (
                   <Button 
-                    onClick={submitAnswer}
-                    className="flex-1 bg-gradient-primary hover:opacity-90"
-                    disabled={
-                      isRecording || 
-                      (speechSupported ? 
-                        (!hasRecorded && transcript.trim().length < 10) : 
-                        !hasRecorded
-                      )
-                    }
+                    onClick={startRecording}
+                    className="flex-1 bg-accent hover:bg-accent/90"
+                    disabled={!cameraReady || !micReady}
                   >
-                    {currentQuestion < INTERVIEW_QUESTIONS.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <Mic className="w-4 h-4 mr-2" />
+                    Start Answer
                   </Button>
-                </div>
-
-                {/* Transcript Display */}
-                {speechSupported && transcript && (
-                  <Card className="p-4 bg-muted/50">
-                    <h4 className="font-semibold mb-2 text-sm">Live Transcript:</h4>
-                    <p className="text-sm text-muted-foreground italic">{transcript}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Characters: {transcript.length}/10 minimum {transcript.length >= 10 ? '✓' : ''}
-                    </p>
-                  </Card>
+                ) : (
+                  <Button 
+                    onClick={stopRecording}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <MicOff className="w-4 h-4 mr-2" />
+                    Stop Recording
+                  </Button>
                 )}
                 
-                {/* Recording Status for Non-Speech Recognition */}
-                {!speechSupported && hasRecorded && (
-                  <Card className="p-4 bg-accent/10 border-accent/20">
-                    <div className="flex items-center space-x-2 text-accent">
-                      <CheckCircle className="w-4 h-4" />
-                      <span className="text-sm font-medium">Audio answer recorded successfully</span>
-                    </div>
-                  </Card>
-                )}
-                
-                {/* Status indicator for speech recognition browsers */}
-                {speechSupported && !isRecording && (
-                  <Card className="p-3 bg-muted/30">
-                    <div className="flex items-center justify-between text-sm">
-                      <span>Answer Status:</span>
-                      <div className="flex items-center space-x-2">
-                        {transcript.trim().length >= 10 ? (
-                          <>
-                            <CheckCircle className="w-4 h-4 text-accent" />
-                            <span className="text-accent">Ready to submit</span>
-                          </>
-                        ) : hasRecorded ? (
-                          <>
-                            <CheckCircle className="w-4 h-4 text-primary" />
-                            <span className="text-primary">Audio recorded</span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="w-4 h-4 border-2 border-muted-foreground rounded-full" />
-                            <span className="text-muted-foreground">Not ready</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                )}
-
-                {/* Instructions */}
-                <Card className="p-4 bg-muted">
-                  <h4 className="font-semibold mb-2 flex items-center">
-                    <CheckCircle className="w-4 h-4 mr-2 text-accent" />
-                    Instructions
-                  </h4>
-                  <ul className="text-sm space-y-1 text-muted-foreground">
-                    <li>• Look directly at the camera while answering</li>
-                    <li>• Speak clearly and at a normal pace</li>
-                    <li>• Provide detailed answers (minimum 10 characters)</li>
-                    {speechSupported && <li>• Your speech is automatically transcribed</li>}
-                    {!speechSupported && <li>• Speech recognition not available in this browser</li>}
-                  </ul>
-                </Card>
+                <Button 
+                  onClick={submitAnswer}
+                  className="flex-1 bg-gradient-primary hover:opacity-90"
+                  disabled={
+                    isRecording || 
+                    timeElapsed < 10000 ||
+                    (speechSupported ? 
+                      (!hasRecorded && transcript.trim().length < 10) : 
+                      !hasRecorded
+                    )
+                  }
+                >
+                  {currentQuestion < questions.length - 1 ? 'Submit & Next' : 'Submit & Complete'}
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
               </div>
-            </Card>
+
+              {/* Transcript Display */}
+              {speechSupported && transcript && (
+                <Card className="p-4 bg-muted/50">
+                  <h4 className="font-semibold mb-2 text-sm">Live Transcript:</h4>
+                  <p className="text-sm text-muted-foreground italic">{transcript}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Characters: {transcript.length}/10 minimum {transcript.length >= 10 ? '✓' : ''}
+                  </p>
+                </Card>
+              )}
+              
+              {/* Recording Status for Non-Speech Recognition */}
+              {!speechSupported && hasRecorded && (
+                <Card className="p-4 bg-accent/10 border-accent/20">
+                  <div className="flex items-center space-x-2 text-accent">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">Audio answer recorded successfully</span>
+                  </div>
+                </Card>
+              )}
+              
+              {/* Status indicator for speech recognition browsers */}
+              {speechSupported && !isRecording && (
+                <Card className="p-3 bg-muted/30">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Answer Status:</span>
+                    <div className="flex items-center space-x-2">
+                      {transcript.trim().length >= 10 ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-accent" />
+                          <span className="text-accent">Ready to submit</span>
+                        </>
+                      ) : hasRecorded ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 text-primary" />
+                          <span className="text-primary">Audio recorded</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-4 h-4 border-2 border-muted-foreground rounded-full" />
+                          <span className="text-muted-foreground">Not ready</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Instructions */}
+              <Card className="p-4 bg-muted">
+                <h4 className="font-semibold mb-2 flex items-center">
+                  <CheckCircle className="w-4 h-4 mr-2 text-accent" />
+                  Instructions
+                </h4>
+                <ul className="text-sm space-y-1 text-muted-foreground">
+                  <li>• Look directly at the camera while answering</li>
+                  <li>• Speak clearly and at a normal pace</li>
+                  <li>• Spend at least 10 seconds per question</li>
+                  <li>• Provide detailed answers (minimum 10 characters)</li>
+                  {speechSupported && <li>• Your speech is automatically transcribed</li>}
+                  {!speechSupported && <li>• Speech recognition not available in this browser</li>}
+                </ul>
+              </Card>
+            </div>
           </div>
-        </div>
-      </main>
+        </Card>
+      </div>
     </div>
   );
 };

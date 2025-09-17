@@ -100,3 +100,24 @@ export const evaluateInterview = (
     feedback
   };
 };
+
+// Simple single answer evaluation
+export const evaluateAnswer = (answer: string, question: string): number => {
+  if (!answer || answer.trim().length < 10) return 0;
+  
+  const words = answer.toLowerCase().split(/\s+/);
+  const wordCount = words.length;
+  
+  // Base score on length and content
+  let score = Math.min(80, wordCount * 2);
+  
+  // Bonus for technical keywords
+  const technicalKeywords = ['algorithm', 'database', 'api', 'system', 'design', 'code', 'development'];
+  const technicalMentions = technicalKeywords.filter(keyword => 
+    answer.toLowerCase().includes(keyword)
+  ).length;
+  
+  score += technicalMentions * 5;
+  
+  return Math.min(100, score);
+};

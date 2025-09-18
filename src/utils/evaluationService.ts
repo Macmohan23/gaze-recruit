@@ -1,4 +1,4 @@
-// Free AI evaluation service using simple scoring algorithms
+// Optimized AI evaluation service using efficient scoring algorithms
 export interface EvaluationResult {
   overallScore: number;
   communicationScore: number;
@@ -8,41 +8,52 @@ export interface EvaluationResult {
   feedback: string[];
 }
 
+// Pre-compiled keyword sets for O(1) lookup
+const technicalKeywordSet = new Set([
+  'algorithm', 'database', 'api', 'framework', 'programming', 'code',
+  'system', 'architecture', 'design', 'development', 'testing', 'security',
+  'javascript', 'react', 'node', 'sql', 'python', 'java', 'git', 'aws'
+]);
+
+const communicationKeywordSet = new Set([
+  'experience', 'team', 'project', 'challenge', 'solution', 'learn',
+  'collaborate', 'communicate', 'problem', 'responsibility', 'leadership',
+  'mentor', 'feedback', 'conflict', 'stakeholder', 'presentation'
+]);
+
 export const evaluateInterview = (
   answers: string[],
   gazeWarnings: number,
   totalQuestions: number
 ): EvaluationResult => {
-  // Filter out empty or too short answers
+  // Filter and process answers in a single pass
   const validAnswers = answers.filter(a => a.trim().length > 10);
   const answerCompleteness = validAnswers.length / totalQuestions;
   const focusScore = Math.max(0, 100 - (gazeWarnings * 8));
   
-  // Simple keyword analysis for technical content
-  const technicalKeywords = [
-    'algorithm', 'database', 'api', 'framework', 'programming', 'code',
-    'system', 'architecture', 'design', 'development', 'testing', 'security'
-  ];
-  
-  const communicationKeywords = [
-    'experience', 'team', 'project', 'challenge', 'solution', 'learn',
-    'collaborate', 'communicate', 'problem', 'responsibility'
-  ];
-
+  // Single-pass analysis for optimal performance
   let technicalMentions = 0;
   let communicationMentions = 0;
   let totalWordCount = 0;
+  let uniqueTechnicalWords = new Set<string>();
+  let uniqueCommunicationWords = new Set<string>();
 
   validAnswers.forEach(answer => {
-    const words = answer.toLowerCase().split(/\s+/);
+    const lowerAnswer = answer.toLowerCase();
+    const words = lowerAnswer.split(/\s+/);
     totalWordCount += words.length;
     
-    technicalKeywords.forEach(keyword => {
-      if (words.includes(keyword)) technicalMentions++;
-    });
-    
-    communicationKeywords.forEach(keyword => {
-      if (words.includes(keyword)) communicationMentions++;
+    // Single pass through words with Set lookups (O(1))
+    words.forEach(word => {
+      const cleanWord = word.replace(/[^\w]/g, ''); // Remove punctuation
+      if (technicalKeywordSet.has(cleanWord)) {
+        technicalMentions++;
+        uniqueTechnicalWords.add(cleanWord);
+      }
+      if (communicationKeywordSet.has(cleanWord)) {
+        communicationMentions++;
+        uniqueCommunicationWords.add(cleanWord);
+      }
     });
   });
 
@@ -101,23 +112,28 @@ export const evaluateInterview = (
   };
 };
 
-// Simple single answer evaluation
+// Optimized single answer evaluation
 export const evaluateAnswer = (answer: string, question: string): number => {
   if (!answer || answer.trim().length < 10) return 0;
   
-  const words = answer.toLowerCase().split(/\s+/);
+  const lowerAnswer = answer.toLowerCase();
+  const words = lowerAnswer.split(/\s+/);
   const wordCount = words.length;
   
   // Base score on length and content
   let score = Math.min(80, wordCount * 2);
   
-  // Bonus for technical keywords
-  const technicalKeywords = ['algorithm', 'database', 'api', 'system', 'design', 'code', 'development'];
-  const technicalMentions = technicalKeywords.filter(keyword => 
-    answer.toLowerCase().includes(keyword)
-  ).length;
+  // Efficient keyword matching using Set lookup
+  let technicalMentions = 0;
+  words.forEach(word => {
+    const cleanWord = word.replace(/[^\w]/g, '');
+    if (technicalKeywordSet.has(cleanWord)) {
+      technicalMentions++;
+    }
+  });
   
-  score += technicalMentions * 5;
+  // Bonus points with diminishing returns
+  score += Math.min(20, technicalMentions * 5);
   
   return Math.min(100, score);
 };

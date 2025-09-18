@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+// Optimized face detection with performance improvements
 export const useFaceDetection = (videoElement: HTMLVideoElement | null) => {
   const [isLookingAway, setIsLookingAway] = useState(false);
   const [gazeWarnings, setGazeWarnings] = useState(0);
-  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
   const lastWarningTimeRef = useRef(0);
   const lookingAwayStartRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
   const incrementWarning = useCallback(() => {
     const now = Date.now();
@@ -16,93 +19,108 @@ export const useFaceDetection = (videoElement: HTMLVideoElement | null) => {
     }
   }, []);
 
+  // Optimized pixel processing using typed arrays
+  const analyzeBrightness = useCallback((data: Uint8ClampedArray, width: number, height: number) => {
+    let brightPixels = 0;
+    let centerBrightPixels = 0;
+    
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+    const checkRadius = 40; // Reduced for better performance
+    
+    // Pre-calculate bounds
+    const centerStartX = Math.max(0, centerX - checkRadius);
+    const centerEndX = Math.min(width, centerX + checkRadius);
+    const centerStartY = Math.max(0, centerY - checkRadius);
+    const centerEndY = Math.min(height, centerY + checkRadius);
+    
+    // Single pass with optimized loops
+    for (let y = 0; y < height; y += 2) { // Skip every other row for performance
+      for (let x = 0; x < width; x += 2) { // Skip every other column
+        const index = (y * width + x) * 4;
+        const brightness = (data[index] + data[index + 1] + data[index + 2]) * 0.333; // Faster than division
+        
+        if (brightness > 80) brightPixels++;
+        
+        // Check if pixel is in center region
+        if (x >= centerStartX && x < centerEndX && y >= centerStartY && y < centerEndY) {
+          if (brightness > 100) centerBrightPixels++;
+        }
+      }
+    }
+    
+    const sampledPixels = (width * height) / 4; // We sample every 4th pixel
+    const centerPixels = (checkRadius * 2) * (checkRadius * 2) / 4;
+    
+    return {
+      faceDetected: (brightPixels / sampledPixels > 0.15) && (centerBrightPixels / centerPixels > 0.12)
+    };
+  }, []);
+
+  const detectFace = useCallback(() => {
+    if (!videoElement || !canvasRef.current || !ctxRef.current || videoElement.videoWidth === 0) {
+      return;
+    }
+
+    try {
+      const canvas = canvasRef.current;
+      const ctx = ctxRef.current;
+      
+      ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      const { faceDetected } = analyzeBrightness(imageData.data, canvas.width, canvas.height);
+      const now = Date.now();
+      
+      if (!faceDetected) {
+        if (!isLookingAway) {
+          setIsLookingAway(true);
+          lookingAwayStartRef.current = now;
+        }
+        // Trigger warning after 2 seconds of looking away
+        if (now - lookingAwayStartRef.current > 2000) {
+          incrementWarning();
+        }
+      } else {
+        if (isLookingAway) {
+          setIsLookingAway(false);
+          lookingAwayStartRef.current = 0;
+        }
+      }
+    } catch (error) {
+      console.warn('Face detection error:', error);
+    }
+
+    // Use requestAnimationFrame for smooth processing, but throttle to ~2 FPS
+    setTimeout(() => {
+      animationFrameRef.current = requestAnimationFrame(detectFace);
+    }, 500);
+  }, [videoElement, isLookingAway, incrementWarning, analyzeBrightness]);
+
   useEffect(() => {
     if (!videoElement) return;
 
-    const initFaceDetection = async () => {
-      try {
-        // Use a lighter, faster approach with built-in browser APIs
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    // Initialize canvas once
+    if (!canvasRef.current) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true }); // Performance optimizations
+      if (!ctx) return;
 
-        canvas.width = 320; // Reduced resolution for faster processing
-        canvas.height = 240;
+      canvas.width = 160; // Further reduced resolution for maximum performance
+      canvas.height = 120;
+      canvasRef.current = canvas;
+      ctxRef.current = ctx;
+    }
 
-        // Start face detection loop with higher frequency
-        detectionIntervalRef.current = setInterval(() => {
-          if (videoElement && videoElement.videoWidth > 0) {
-            try {
-              ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              
-              // Simple brightness-based face detection (faster than ML models)
-              const data = imageData.data;
-              let brightPixels = 0;
-              let centerBrightPixels = 0;
-              
-              // Check center region for face presence
-              const centerX = canvas.width / 2;
-              const centerY = canvas.height / 2;
-              const checkRadius = 60;
-              
-              for (let y = centerY - checkRadius; y < centerY + checkRadius; y++) {
-                for (let x = centerX - checkRadius; x < centerX + checkRadius; x++) {
-                  if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
-                    const index = (y * canvas.width + x) * 4;
-                    const brightness = (data[index] + data[index + 1] + data[index + 2]) / 3;
-                    if (brightness > 100) centerBrightPixels++;
-                  }
-                }
-              }
-
-              // Overall brightness check
-              for (let i = 0; i < data.length; i += 16) { // Sample every 4th pixel
-                const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                if (brightness > 80) brightPixels++;
-              }
-
-              // Determine if face is present and centered
-              const totalPixels = (canvas.width * canvas.height) / 4;
-              const centerPixels = (checkRadius * 2) * (checkRadius * 2);
-              const faceDetected = (brightPixels / totalPixels > 0.2) && (centerBrightPixels / centerPixels > 0.15);
-
-              const now = Date.now();
-              
-              if (!faceDetected) {
-                if (!isLookingAway) {
-                  setIsLookingAway(true);
-                  lookingAwayStartRef.current = now;
-                }
-                // Trigger warning after 2 seconds of looking away
-                if (now - lookingAwayStartRef.current > 2000) {
-                  incrementWarning();
-                }
-              } else {
-                if (isLookingAway) {
-                  setIsLookingAway(false);
-                  lookingAwayStartRef.current = 0;
-                }
-              }
-            } catch (error) {
-              console.warn('Face detection error:', error);
-            }
-          }
-        }, 500); // Check twice per second for better responsiveness
-
-      } catch (error) {
-        console.warn('Failed to initialize face detection:', error);
-      }
-    };
-
-    initFaceDetection();
+    // Start detection loop
+    animationFrameRef.current = requestAnimationFrame(detectFace);
 
     return () => {
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [videoElement, isLookingAway, incrementWarning]);
+  }, [videoElement, detectFace]);
 
   return { isLookingAway, gazeWarnings, setGazeWarnings };
 };

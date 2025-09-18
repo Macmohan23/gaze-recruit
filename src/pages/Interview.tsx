@@ -192,7 +192,7 @@ const Interview = () => {
     
     // Start speech recognition if supported
     if (speechSupported) {
-      setTranscript("");
+      setTranscript();
       startListening();
     }
     
@@ -273,7 +273,7 @@ const Interview = () => {
 
   const resetForNextQuestion = () => {
     setHasRecorded(false);
-    setTranscript("");
+    setTranscript();
     setQuestionStartTime(Date.now());
     setTimeElapsed(0);
     stopRecording();

@@ -173,14 +173,20 @@ const Interview = () => {
     };
   }, [toast]);
 
-  // Show gaze warnings from face detection
+  // Optimized gaze warning system to prevent spam
+  const lastGazeWarningRef = useRef(0);
   useEffect(() => {
     if (isLookingAway) {
-      toast({
-        title: "Stay Focused",
-        description: `Please look at the camera during the interview. Warning ${gazeWarnings + 1}`,
-        variant: "destructive"
-      });
+      const now = Date.now();
+      // Only show toast warnings every 5 seconds to prevent spam
+      if (now - lastGazeWarningRef.current > 5000) {
+        toast({
+          title: "Stay Focused",
+          description: `Please maintain eye contact with the camera. Total warnings: ${gazeWarnings}`,
+          variant: "destructive"
+        });
+        lastGazeWarningRef.current = now;
+      }
     }
   }, [isLookingAway, gazeWarnings, toast]);
 

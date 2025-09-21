@@ -26,23 +26,35 @@ export const useSpeechRecognition = () => {
   const transcriptPartsRef = useRef<string[]>([]); // Optimized transcript building
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debounced transcript update for better performance
+  // Ultra-optimized transcript update with smart batching
   const updateTranscript = useCallback((newParts: string[]) => {
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
     
     updateTimeoutRef.current = setTimeout(() => {
-      const fullTranscript = newParts.join(' ').trim();
-      // Prevent memory issues with very long transcripts
-      if (fullTranscript.length > 5000) {
-        const trimmedTranscript = fullTranscript.substring(fullTranscript.length - 4000);
-        setTranscript(trimmedTranscript);
-        transcriptPartsRef.current = [trimmedTranscript];
-      } else {
-        setTranscript(fullTranscript);
+      // Use efficient array join with pre-allocated string builder approach
+      let fullTranscript = '';
+      for (let i = 0; i < newParts.length; i++) {
+        if (newParts[i]) {
+          fullTranscript += (i > 0 ? ' ' : '') + newParts[i];
+        }
       }
-    }, 100); // Debounce updates by 100ms
+      
+      fullTranscript = fullTranscript.trim();
+      
+      // Smart memory management with exponential reduction
+      if (fullTranscript.length > 8000) {
+        const keepLength = 6000;
+        const truncateFrom = Math.floor((fullTranscript.length - keepLength) / 2);
+        fullTranscript = fullTranscript.substring(0, truncateFrom) + 
+                        "..." + 
+                        fullTranscript.substring(fullTranscript.length - keepLength + truncateFrom);
+        transcriptPartsRef.current = [fullTranscript];
+      }
+      
+      setTranscript(fullTranscript);
+    }, 50); // Reduced debounce for more responsive UI
   }, []);
 
   useEffect(() => {
@@ -65,26 +77,43 @@ export const useSpeechRecognition = () => {
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcriptParts = [...transcriptPartsRef.current];
-        let hasNewFinalResult = false;
+        const transcriptParts = transcriptPartsRef.current;
+        let hasUpdate = false;
+        let processedResults = 0;
 
-        // Optimized result processing
+        // Ultra-optimized batch processing with early termination
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript = result[0].transcript.trim();
           
-          if (result.isFinal && transcript) {
-            transcriptParts[i] = transcript;
-            hasNewFinalResult = true;
-          } else if (!result.isFinal && transcript) {
-            // Update interim result
-            transcriptParts[i] = transcript;
+          if (!result[0]) continue; // Skip empty results
+          
+          const transcript = result[0].transcript;
+          const confidence = result[0].confidence || 1;
+          
+          // Only process high-confidence results to reduce noise
+          if (confidence < 0.7 && !result.isFinal) continue;
+          
+          const trimmedTranscript = transcript.trim();
+          
+          if (result.isFinal && trimmedTranscript) {
+            transcriptParts[i] = trimmedTranscript;
+            hasUpdate = true;
+            processedResults++;
+          } else if (!result.isFinal && trimmedTranscript && i === event.results.length - 1) {
+            // Only update interim result for the latest partial result
+            transcriptParts[i] = trimmedTranscript;
+            hasUpdate = true;
           }
         }
 
-        if (hasNewFinalResult || event.results.length > 0) {
-          transcriptPartsRef.current = transcriptParts;
+        // Batch update to prevent excessive re-renders
+        if (hasUpdate) {
           updateTranscript(transcriptParts);
+          
+          // Performance logging for optimization
+          if (processedResults > 0) {
+            console.debug(`Processed ${processedResults} speech results`);
+          }
         }
       };
 

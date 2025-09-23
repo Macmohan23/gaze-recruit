@@ -4,20 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause, Download, RotateCcw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
-interface AdminVideoPlayerProps {
-  videoPath: string;
-  candidateName: string;
-  interviewDate: string;
-  interviewId: string;
-}
-
 export const AdminVideoPlayer = ({ 
   videoPath, 
   candidateName, 
   interviewDate, 
   interviewId 
-}: AdminVideoPlayerProps) => {
-  const [videoUrl, setVideoUrl] = useState<string>('');
+}) => {
+  const [videoUrl, setVideoUrl] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -42,7 +35,7 @@ export const AdminVideoPlayer = ({
   }, [videoPath]);
 
   const handlePlayPause = () => {
-    const video = document.getElementById(`video-${interviewId}`) as HTMLVideoElement;
+    const video = document.getElementById(`video-${interviewId}`);
     if (video) {
       if (isPlaying) {
         video.pause();
@@ -63,7 +56,7 @@ export const AdminVideoPlayer = ({
   };
 
   const handleRestart = () => {
-    const video = document.getElementById(`video-${interviewId}`) as HTMLVideoElement;
+    const video = document.getElementById(`video-${interviewId}`);
     if (video) {
       video.currentTime = 0;
       if (isPlaying) {

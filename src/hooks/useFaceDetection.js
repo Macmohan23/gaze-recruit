@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 // Ultra-optimized face detection with hardware acceleration
-export const useFaceDetection = (videoElement: HTMLVideoElement | null) => {
+export const useFaceDetection = (videoElement) => {
   const [isLookingAway, setIsLookingAway] = useState(false);
   const [gazeWarnings, setGazeWarnings] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef(null);
   const lastWarningTimeRef = useRef(0);
   const lookingAwayStartRef = useRef(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const detectionWorkerRef = useRef<Worker | null>(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
+  const detectionWorkerRef = useRef(null);
   const performanceMetricsRef = useRef({ detections: 0, avgTime: 0 });
 
   const incrementWarning = useCallback(() => {
@@ -26,7 +26,7 @@ export const useFaceDetection = (videoElement: HTMLVideoElement | null) => {
   }, []);
 
   // Ultra-optimized pixel processing with SIMD-style operations and adaptive sampling
-  const analyzeBrightness = useCallback((data: Uint8ClampedArray, width: number, height: number) => {
+  const analyzeBrightness = useCallback((data, width, height) => {
     const startTime = performance.now();
     let brightPixels = 0;
     let centerBrightPixels = 0;

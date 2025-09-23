@@ -1,33 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Extend Window interface for speech recognition
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
-
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message: string;
-}
-
 export const useSpeechRecognition = () => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  const transcriptPartsRef = useRef<string[]>([]); // Optimized transcript building
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const recognitionRef = useRef(null);
+  const transcriptPartsRef = useRef([]); // Optimized transcript building
+  const updateTimeoutRef = useRef(null);
 
   // Ultra-optimized transcript update with smart batching
-  const updateTranscript = useCallback((newParts: string[]) => {
+  const updateTranscript = useCallback((newParts) => {
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
@@ -60,8 +42,8 @@ export const useSpeechRecognition = () => {
   useEffect(() => {
     // Check if browser supports speech recognition
     const SpeechRecognition = 
-      (window as any).SpeechRecognition || 
-      (window as any).webkitSpeechRecognition;
+      window.SpeechRecognition || 
+      window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
       setIsSupported(true);
@@ -76,7 +58,7 @@ export const useSpeechRecognition = () => {
         setIsListening(true);
       };
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.onresult = (event) => {
         const transcriptParts = transcriptPartsRef.current;
         let hasUpdate = false;
         let processedResults = 0;
@@ -117,7 +99,7 @@ export const useSpeechRecognition = () => {
         }
       };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
         

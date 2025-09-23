@@ -8,22 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Users, Briefcase, LogOut, Play } from "lucide-react";
 
-interface Profile {
-  id: string;
-  full_name: string;
-  email: string;
-  phone: string;
-  position_applied: string;
-}
-
-interface Interview {
-  id: string;
-  status: string;
-  score: number;
-  completed_at: string;
-  job_role: string;
-}
-
 const jobRoles = [
   { value: 'software_developer', label: 'Software Developer' },
   { value: 'data_analyst', label: 'Data Analyst' },
@@ -34,9 +18,9 @@ const jobRoles = [
 ];
 
 const CandidateDashboard = () => {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [selectedRole, setSelectedRole] = useState<string>("");
+  const [profile, setProfile] = useState(null);
+  const [interviews, setInterviews] = useState([]);
+  const [selectedRole, setSelectedRole] = useState("");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -56,7 +40,7 @@ const CandidateDashboard = () => {
 
       await loadProfile(session.user.id);
       await loadInterviews();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to load dashboard data",
@@ -67,7 +51,7 @@ const CandidateDashboard = () => {
     }
   };
 
-  const loadProfile = async (userId: string) => {
+  const loadProfile = async (userId) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -97,7 +81,7 @@ const CandidateDashboard = () => {
     setInterviews(data || []);
   };
 
-  const handleRoleSelection = async (role: string) => {
+  const handleRoleSelection = async (role) => {
     setSelectedRole(role);
     
     if (!profile) return;

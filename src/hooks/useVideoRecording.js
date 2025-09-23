@@ -3,11 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 
 export const useVideoRecording = () => {
   const [isRecording, setIsRecording] = useState(false);
-  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
+  const [recordedBlob, setRecordedBlob] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
 
-  const startRecording = useCallback((stream: MediaStream) => {
+  const startRecording = useCallback((stream) => {
     try {
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'video/webm;codecs=vp9,opus'
@@ -44,9 +44,9 @@ export const useVideoRecording = () => {
   }, [isRecording]);
 
   const uploadRecording = useCallback(async (
-    candidateId: string, 
-    interviewId: string
-  ): Promise<string | null> => {
+    candidateId, 
+    interviewId
+  ) => {
     if (!recordedBlob) return null;
 
     try {

@@ -11,27 +11,18 @@ import { useVideoRecording } from "@/hooks/useVideoRecording";
 import { evaluateAnswer } from "@/utils/evaluationService";
 import { supabase } from "@/integrations/supabase/client";
 
-interface Question {
-  id: string;
-  question_text: string;
-  question_order: number;
-  category: string;
-  difficulty_level: string;
-  expected_duration: number;
-}
-
 const Interview = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef(null);
   
   // Question state
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const [answers, setAnswers] = useState([]);
   const [hasRecorded, setHasRecorded] = useState(false);
-  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
+  const [questionStartTime, setQuestionStartTime] = useState(Date.now());
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [cameraReady, setCameraReady] = useState(false);
   const [micReady, setMicReady] = useState(false);
@@ -167,7 +158,7 @@ const Interview = () => {
     return () => {
       // Cleanup media stream
       if (videoRef.current?.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+        const tracks = videoRef.current.srcObject.getTracks();
         tracks.forEach(track => track.stop());
       }
     };
@@ -193,7 +184,7 @@ const Interview = () => {
   const startRecording = () => {
     setHasRecorded(false);
     if (videoRef.current?.srcObject) {
-      startVideoRecording(videoRef.current.srcObject as MediaStream);
+      startVideoRecording(videoRef.current.srcObject);
     }
     
     // Start speech recognition if supported
@@ -285,7 +276,7 @@ const Interview = () => {
     stopRecording();
   };
 
-  const completeInterview = async (finalAnswers: string[]) => {
+  const completeInterview = async (finalAnswers) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
@@ -326,7 +317,7 @@ const Interview = () => {
           started_at: new Date().toISOString(),
           completed_at: new Date().toISOString(),
           status: 'completed',
-          job_role: profile.position_applied as any,
+          job_role: profile.position_applied,
           video_recording_url: recordedBlob ? URL.createObjectURL(recordedBlob) : null
         }])
         .select()

@@ -4,14 +4,13 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle, Trophy, AlertTriangle, Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Progress } from "@/components/ui/progress";
-import { EvaluationResult } from "@/utils/evaluationService";
 
 const InterviewComplete = () => {
   const navigate = useNavigate();
-  const [candidateData, setCandidateData] = useState<any>(null);
+  const [candidateData, setCandidateData] = useState(null);
   const [score, setScore] = useState(0);
   const [warnings, setWarnings] = useState(0);
-  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [evaluation, setEvaluation] = useState(null);
 
   useEffect(() => {
     // Get stored data
@@ -34,14 +33,14 @@ const InterviewComplete = () => {
     }
   }, []);
 
-  const getScoreColor = (score: number) => {
+  const getScoreColor = (score) => {
     if (score >= 80) return "text-accent";
     if (score >= 70) return "text-primary";
     if (score >= 60) return "text-yellow-600";
     return "text-destructive";
   };
 
-  const getScoreLabel = (score: number) => {
+  const getScoreLabel = (score) => {
     if (score >= 80) return "Excellent";
     if (score >= 70) return "Good";
     if (score >= 60) return "Fair";

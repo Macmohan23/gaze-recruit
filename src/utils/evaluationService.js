@@ -1,12 +1,4 @@
 // Optimized AI evaluation service using efficient scoring algorithms
-export interface EvaluationResult {
-  overallScore: number;
-  communicationScore: number;
-  technicalScore: number;
-  confidenceScore: number;
-  focusScore: number;
-  feedback: string[];
-}
 
 // Pre-compiled keyword sets for O(1) lookup
 const technicalKeywordSet = new Set([
@@ -22,10 +14,10 @@ const communicationKeywordSet = new Set([
 ]);
 
 export const evaluateInterview = (
-  answers: string[],
-  gazeWarnings: number,
-  totalQuestions: number
-): EvaluationResult => {
+  answers,
+  gazeWarnings,
+  totalQuestions
+) => {
   // Filter and process answers in a single pass
   const validAnswers = answers.filter(a => a.trim().length > 10);
   const answerCompleteness = validAnswers.length / totalQuestions;
@@ -35,8 +27,8 @@ export const evaluateInterview = (
   let technicalMentions = 0;
   let communicationMentions = 0;
   let totalWordCount = 0;
-  let uniqueTechnicalWords = new Set<string>();
-  let uniqueCommunicationWords = new Set<string>();
+  let uniqueTechnicalWords = new Set();
+  let uniqueCommunicationWords = new Set();
 
   validAnswers.forEach(answer => {
     const lowerAnswer = answer.toLowerCase();
@@ -78,7 +70,7 @@ export const evaluateInterview = (
   );
 
   // Generate feedback
-  const feedback: string[] = [];
+  const feedback = [];
   
   if (overallScore >= 80) {
     feedback.push("Excellent performance! You demonstrated strong communication and technical skills.");
@@ -113,7 +105,7 @@ export const evaluateInterview = (
 };
 
 // Optimized single answer evaluation
-export const evaluateAnswer = (answer: string, question: string): number => {
+export const evaluateAnswer = (answer, question) => {
   if (!answer || answer.trim().length < 10) return 0;
   
   const lowerAnswer = answer.toLowerCase();

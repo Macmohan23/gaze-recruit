@@ -9,21 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AdminVideoPlayer } from "@/components/AdminVideoPlayer";
 
-interface InterviewData {
-  id: string;
-  candidate_name: string;
-  position_applied: string;
-  score: number;
-  gaze_warnings: number;
-  completed_at: string;
-  video_recording_url: string;
-}
-
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [interviews, setInterviews] = useState<InterviewData[]>([]);
-  const [selectedInterview, setSelectedInterview] = useState<InterviewData | null>(null);
+  const [interviews, setInterviews] = useState([]);
+  const [selectedInterview, setSelectedInterview] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -89,7 +79,7 @@ const AdminDashboard = () => {
     navigate('/admin');
   };
 
-  const getScoreColor = (score: number) => {
+  const getScoreColor = (score) => {
     if (score >= 80) return "bg-green-500";
     if (score >= 60) return "bg-yellow-500";
     return "bg-red-500";
